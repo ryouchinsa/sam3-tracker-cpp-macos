@@ -170,6 +170,8 @@ class Sam3TrackerONNXInference:
         iou_score    = iou_scores[0][0][0]
         object_logit = object_score_logits[0][0][0]
         object_logit = 1.0 / (1.0 + np.exp(-object_logit))  # sigmoid
+        print(iou_score)
+        print(object_logit)
         return {
             "pred_mask": pred_mask,
             "low_res_mask": low_res_mask,
@@ -199,7 +201,6 @@ def visualize_results(
     mask = result["pred_mask"]
     iou = result["iou_score"]
     obj = result["object_logit"]
-    print(iou, obj)
     color = colors[0]
     color_negative = colors[1]
     overlay = vis.copy()
@@ -357,6 +358,5 @@ def main():
     cv2.imwrite(mask_save_path, mask_out)
     print(f"Saved prior mask for next frame: {mask_save_path}")
         
-
 if __name__ == "__main__":
     main()

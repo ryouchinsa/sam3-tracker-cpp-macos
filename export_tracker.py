@@ -194,6 +194,5 @@ def main():
                     model, output_dir, args.device, args.quantize,
                 )
 
-
 if __name__ == "__main__":
     main()

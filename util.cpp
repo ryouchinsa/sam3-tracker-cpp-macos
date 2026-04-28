@@ -1,0 +1,177 @@
+#include "util.h"
+
+std::vector<std::string> split(const std::string &text, const char &separator){
+  std::vector<std::string> strings;
+  std::istringstream f(text);
+  std::string s;    
+  while (getline(f, s, separator)) {
+    strings.push_back(s);
+  }
+  return strings;
+}
+
+std::tuple<std::vector<cv::Point2f>, std::vector<int>> parse_point_prompts(const std::string &text, const cv::Size &imageSize, const cv::Size &inputSize){
+  std::vector<cv::Point2f> points;
+  std::vector<int> labels;
+  std::vector<std::string> split_semicolon = split(text, ';');
+  for(int i = 0; i < split_semicolon.size(); i++){
+    std::string coords;
+    int label = 1;
+    if(split_semicolon[i].rfind("pos:", 0) == 0) {
+      coords = split_semicolon[i].substr(4);
+      label = 1;
+    }else if(split_semicolon[i].rfind("neg:", 0) == 0) {
+      coords = split_semicolon[i].substr(4);
+      label = 0;
+    }
+    std::vector<std::string> split_comma = split(coords, ',');
+    if(split_comma.size() == 2){
+      cv::Point2f point = cv::Point2f(
+        std::stof(split_comma[0]),
+        std::stof(split_comma[1]));
+      points.push_back(point);
+      labels.push_back(label);
+    }
+  }
+  normalizePoints(&points, imageSize, inputSize);
+  return std::make_tuple(points, labels);
+}
+
+void normalizePoints(std::vector<cv::Point2f> *points, const cv::Size &imageSize, const cv::Size &inputSize){
+  for(int i = 0; i < (*points).size(); i++){
+    (*points)[i].x = (*points)[i].x / imageSize.width * inputSize.width;
+    (*points)[i].y = (*points)[i].y / imageSize.height * inputSize.height;
+  }
+}
+
+std::tuple<std::vector<std::vector<cv::Rect2f>>, std::vector<std::vector<int>>> parse_box_list_prompts(const std::string &boxes, const cv::Size &imageSize){
+  std::vector<std::vector<cv::Rect2f>> rects_list;
+  std::vector<std::vector<int>> labels_list;
+  std::vector<std::string> split_dash = split(boxes, '-');
+  for(int i = 0; i < split_dash.size(); i++){
+    auto [rects, labels] = parse_box_prompts(split_dash[i]);
+    normalizeRects(&rects, imageSize);
+    rects_list.push_back(rects);
+    labels_list.push_back(labels);
+  }
+  return std::make_tuple(rects_list, labels_list);
+}
+
+std::tuple<std::vector<cv::Rect2f>, std::vector<int>> parse_box_prompts(const std::string &boxes){
+  std::vector<cv::Rect2f> rects;
+  std::vector<int> labels;
+  std::vector<std::string> split_semicolon = split(boxes, ';');
+  for(int i = 0; i < split_semicolon.size(); i++){
+    std::string coords;
+    int label = 1;
+    if(split_semicolon[i].rfind("pos:", 0) == 0) {
+      coords = split_semicolon[i].substr(4);
+      label = 1;
+    }else if(split_semicolon[i].rfind("neg:", 0) == 0) {
+      coords = split_semicolon[i].substr(4);
+      label = 0;
+    }
+    std::vector<std::string> split_comma = split(coords, ',');
+    if(split_comma.size() == 4){
+      cv::Rect2f rect = cv::Rect2f(
+        std::stof(split_comma[0]),
+        std::stof(split_comma[1]),
+        std::stof(split_comma[2]),
+        std::stof(split_comma[3]));
+      rects.push_back(rect);
+      labels.push_back(label);
+    }
+  }
+  return std::make_tuple(rects, labels);
+}
+
+void normalizeRects(std::vector<cv::Rect2f> *rects, const cv::Size &imageSize){
+  for(int i = 0; i < (*rects).size(); i++){
+    (*rects)[i].x /= imageSize.width;
+    (*rects)[i].y /= imageSize.height;
+    (*rects)[i].width /= imageSize.width;
+    (*rects)[i].height /= imageSize.height;
+    (*rects)[i].x = (*rects)[i].x + (*rects)[i].width / 2;
+    (*rects)[i].y = (*rects)[i].y + (*rects)[i].height / 2;
+  }
+}
+
+bool modelExists(const std::string& modelPath){
+  std::ifstream f(modelPath);
+  if (!f.good()) {
+    return false;
+  }
+  return true;
+}
+
+std::string LoadBytesFromFile(const std::string& path) {
+  std::string data;
+  std::ifstream fs(path, std::ios::in | std::ios::binary);
+  if (fs.fail()) {
+    std::cerr << "Cannot open " << path << std::endl;
+    return data;
+  }
+  fs.seekg(0, std::ios::end);
+  size_t size = static_cast<size_t>(fs.tellg());
+  fs.seekg(0, std::ios::beg);
+  data.resize(size);
+  fs.read(data.data(), size);
+  return data;
+}
+
+void printShape(const std::vector<int64_t> &shape){
+  std::string text = "";
+  for(int i = 0; i < shape.size(); i++){
+    text = text + std::to_string(shape[i]) + " ";
+  }
+  std::cout << text << std::endl;
+}
+
+int getShapeSize(const std::vector<int64_t> &shape){
+  int size = 1;
+  for(int i = 0; i < shape.size(); i++){
+    size *= shape[i];
+  }
+  return size;
+}
+
+std::vector<int> sort_indexes(const std::vector<float> &v) {
+  std::vector<int> idx(v.size());
+  std::iota(idx.begin(), idx.end(), 0);
+  stable_sort(idx.begin(), idx.end(), [&v](int i1, int i2) {return v[i1] > v[i2];});
+  return idx;
+}
+
+float calc_iou(const std::vector<int> &box1, const std::vector<int> &box2) {
+  int inter_x1 = std::max(box1[0], box2[0]);
+  int inter_y1 = std::max(box1[1], box2[1]);
+  int inter_x2 = std::min(box1[0] + box1[2], box2[0] + box2[2]);
+  int inter_y2 = std::min(box1[1] + box1[3], box2[1] + box2[3]);
+  int inter_width = std::max(0, inter_x2 - inter_x1);
+  int inter_height = std::max(0, inter_y2 - inter_y1);
+  int inter_area = inter_width * inter_height;
+  if (inter_area == 0) {
+      return 0;
+  }
+  int area1 = box1[2] * box1[3];
+  int area2 = box2[2] * box2[3];
+  int union_area = area1 + area2 - inter_area;
+  return (float)inter_area / union_area;
+}
+
+bool can_append_box(const std::vector<int> box, const std::vector<int> &boxes){
+  float threshold = 0.9;
+  int num = (int)boxes.size() / 4;
+  for(int i = 0; i < num; i++){
+    std::vector<int> box_tmp;
+    for(int j = 0; j < 4; j++){
+      box_tmp.push_back(boxes[4 * i + j]);
+    }
+    float iou = calc_iou(box, box_tmp);
+    if(iou > threshold){
+      return false;
+    }
+  }
+  return true;
+}
+
