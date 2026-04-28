@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
   end = std::chrono::steady_clock::now();
   std::cout << "sec = " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0 <<std::endl;
   if(!FLAGS_points_second.empty()){
+    std::cout<<"getMask started"<<std::endl;
     begin = std::chrono::steady_clock::now();
     isNextGetMask = false;
     auto [points, labels] = parse_point_prompts(FLAGS_points_second, imageSize, inputSize);
