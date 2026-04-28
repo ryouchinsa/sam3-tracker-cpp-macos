@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
   inputPointValues.resize(0);
   inputLabelValues.resize(0);
   end = std::chrono::steady_clock::now();
+  std::cout << "sec = " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0 <<std::endl;
   if(!FLAGS_points_second.empty()){
     begin = std::chrono::steady_clock::now();
     isNextGetMask = false;
@@ -66,8 +67,9 @@ int main(int argc, char** argv) {
     cv::imwrite("mask_point1_then_point2.png", mask);
     inputPointValues.resize(0);
     inputLabelValues.resize(0);
+    end = std::chrono::steady_clock::now();
+    std::cout << "sec = " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0 <<std::endl;
   }
-  std::cout << "sec = " << (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000000.0 <<std::endl;
   end_total = std::chrono::steady_clock::now();
   std::cout << "predict sec = " << (std::chrono::duration_cast<std::chrono::microseconds>(end_total - begin_total).count()) / 1000000.0 <<std::endl;
   return 0;

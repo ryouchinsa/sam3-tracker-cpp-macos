@@ -73,34 +73,26 @@ bool Sam3Tracker::loadModel(const std::string& visionPath,  const std::string& d
       loadingEnd();
       return false;
     }
-
     // Use global thread pool like Python's onnxruntime does
     Ort::ThreadingOptions threadingOptions;
     threadingOptions.SetGlobalIntraOpNumThreads(threadsNumber);
     threadingOptions.SetGlobalInterOpNumThreads(threadsNumber);
-
     // Replace the Env — must be done before session creation
     env = Ort::Env(threadingOptions, ORT_LOGGING_LEVEL_WARNING, "test");
-
     sessionOptions.SetIntraOpNumThreads(threadsNumber);
-    sessionOptions.SetInterOpNumThreads(threadsNumber);  // <-- this was missing
+    sessionOptions.SetInterOpNumThreads(threadsNumber);
     sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-
     // Disable per-session thread spinning — let global pool handle it
     sessionOptions.AddConfigEntry("session.intra_op.allow_spinning", "0");
-
     // Enable memory pattern optimization
     sessionOptions.EnableMemPattern();
     sessionOptions.EnableCpuMemArena();
-
     if(device.substr(0, 5) == "cuda:"){
       int gpuDeviceId = std::stoi(device.substr(5));
       OrtCUDAProviderOptions options;
       options.device_id = gpuDeviceId;
       sessionOptions.AppendExecutionProvider_CUDA(options);
     }
-
-    // Replace the three make_unique lines in loadModel() with:
     auto futureVision = std::async(std::launch::async, [&](){
       return std::make_unique<Ort::Session>(env, visionPath.c_str(), sessionOptions);
     });
@@ -109,24 +101,19 @@ bool Sam3Tracker::loadModel(const std::string& visionPath,  const std::string& d
     });
     visionEncoder = futureVision.get();
     decoder       = futureDecoder.get();
-
     auto cacheIONames = [](Ort::Session* sess,
                            std::vector<std::string>& inNames,  std::vector<const char*>& inPtrs,
                            std::vector<std::string>& outNames, std::vector<const char*>& outPtrs){
       Ort::AllocatorWithDefaultOptions alloc;
-
       inNames.clear();
       for(size_t i = 0; i < sess->GetInputCount(); i++)
         inNames.push_back(sess->GetInputNameAllocated(i, alloc).get());
-
       outNames.clear();
       for(size_t i = 0; i < sess->GetOutputCount(); i++)
         outNames.push_back(sess->GetOutputNameAllocated(i, alloc).get());
-
       // Only build pointer vectors AFTER all strings are final — no more reallocation
       inPtrs.clear();
       for(auto& s : inNames)  inPtrs.push_back(s.c_str());
-
       outPtrs.clear();
       for(auto& s : outNames) outPtrs.push_back(s.c_str());
     };
@@ -134,14 +121,12 @@ bool Sam3Tracker::loadModel(const std::string& visionPath,  const std::string& d
                                       cachedOutputNamesVision, ptrOutputNamesVision);
     cacheIONames(decoder.get(),       cachedInputNamesDecoder, ptrInputNamesDecoder,
                                       cachedOutputNamesDecoder, ptrOutputNamesDecoder);
-    
     inputShapeVision = visionEncoder->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
-    for(int i = 0; i < 3; i++){
-      outputShapeVision[i] = visionEncoder->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
-    }
     inputTensorValuesFloat.assign(getShapeSize(inputShapeVision), 0.0f);
     for(int i = 0; i < 3; i++){
+      outputShapeVision[i] = visionEncoder->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo().GetShape();
       outputVision[i].assign(getShapeSize(outputShapeVision[i]), 0.0f);
+      printShape(outputShapeVision[i]);
     }
   }catch(Ort::Exception& e){
     std::cout << e.what() << std::endl;
@@ -169,6 +154,10 @@ cv::Size Sam3Tracker::getInputSize(){
   return cv::Size((int)inputShapeVision[3], (int)inputShapeVision[2]);
 }
 
+cv::Size Sam3Tracker::getMaskSize(){
+  return cv::Size((int)outputShapeVision[1][3], (int)outputShapeVision[1][2]);
+}
+
 bool Sam3Tracker::preprocessImage(const cv::Mat& image){
   try{
     preprocessingStart();
@@ -180,15 +169,12 @@ bool Sam3Tracker::preprocessImage(const cv::Mat& image){
       preprocessingEnd();
       return false;
     }
-
     // FAST: vectorized OpenCV ops matching Python's (img / 127.5 - 1.0).transpose(2,0,1)
     cv::Mat imageFloat;
     image.convertTo(imageFloat, CV_32F, 1.0 / 127.5, -1.0); // bgr float, normalized
-
     // Split into B, G, R planes and reorder to R, G, B (CHW layout)
     std::vector<cv::Mat> channels(3);
     cv::split(imageFloat, channels);  // channels[0]=B, [1]=G, [2]=R
-
     int64_t planeSize = inputShapeVision[2] * inputShapeVision[3];
     // Copy R, G, B into CHW tensor (matching Python's channel order)
     std::memcpy(inputTensorValuesFloat.data() + 0 * planeSize,
@@ -197,7 +183,6 @@ bool Sam3Tracker::preprocessImage(const cv::Mat& image){
                 channels[1].ptr<float>(), planeSize * sizeof(float)); // G
     std::memcpy(inputTensorValuesFloat.data() + 2 * planeSize,
                 channels[0].ptr<float>(), planeSize * sizeof(float)); // B
-
     auto inputTensor = Ort::Value::CreateTensor<float>(memoryInfo, inputTensorValuesFloat.data(), inputTensorValuesFloat.size(), inputShapeVision.data(), inputShapeVision.size());
     std::vector<Ort::Value> outputTensors;
     for(int i = 0; i < 3; i++){
@@ -254,7 +239,8 @@ void Sam3Tracker::setDecorderTensorsPointsLabels(std::vector<float> &inputPointV
 }
 
 void Sam3Tracker::setDecorderTensorsMaskInput(const size_t maskInputSize, float *maskInputValues, float *hasMaskValues, std::vector<float> &previousMaskInputValues, std::vector<Ort::Value> *inputTensors){
-  std::vector<int64_t> maskInputShape = {1, 1, 288, 288},
+  cv::Size maskSize = getMaskSize();
+  std::vector<int64_t> maskInputShape = {1, 1, maskSize.height, maskSize.width},
   hasMaskInputShape = {1};
   if(hasMaskValues[0] == 1){
     (*inputTensors).push_back(Ort::Value::CreateTensor<float>(memoryInfo, previousMaskInputValues.data(), maskInputSize, maskInputShape.data(), maskInputShape.size()));
@@ -269,7 +255,8 @@ cv::Mat Sam3Tracker::getMask(std::vector<float> &inputPointValues, std::vector<i
   setDecorderTensorsEmbeddings(&inputTensors);
   int numPoints = (int)inputLabelValues.size();
   setDecorderTensorsPointsLabels(inputPointValues, inputLabelValues, numPoints, &inputTensors);
-  const size_t maskInputSize = 288 * 288;
+  cv::Size maskSize = getMaskSize();
+  const size_t maskInputSize = maskSize.height * maskSize.width;
   std::vector<float> previousMaskInputValues;
   resizePreviousMasks(previousMaskIdx);
   float maskInputValues[maskInputSize];
@@ -290,7 +277,6 @@ cv::Mat Sam3Tracker::getMask(std::vector<float> &inputPointValues, std::vector<i
       auto values = outputTensors[i].GetTensorMutableData<float>();
       outputShapeDecoder[i] = outputTensors[i].GetTensorTypeAndShapeInfo().GetShape();
       outputDecoder[i].assign(values, values + getShapeSize(outputShapeDecoder[i]));
-
       printShape(outputShapeDecoder[i]);
     }
     float iouScore = outputDecoder[1][0];

@@ -17,7 +17,6 @@ class Sam3Tracker {
   Ort::SessionOptions sessionOptions;
   Ort::RunOptions runOptionsEncoder;
   Ort::MemoryInfo memoryInfo{Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)};
-
   std::vector<float> inputTensorValuesFloat;
   std::vector<int64_t> inputShapeVision;
   std::vector<int64_t> outputShapeVision[3];
@@ -25,12 +24,10 @@ class Sam3Tracker {
   std::vector<int64_t> outputShapeDecoder[3];
   std::vector<float> outputDecoder[3];
   std::vector<std::vector<float>> previousMasks;
-
   std::vector<std::string> cachedInputNamesVision, cachedOutputNamesVision;
   std::vector<std::string> cachedInputNamesDecoder, cachedOutputNamesDecoder;
   std::vector<const char*> ptrInputNamesVision, ptrOutputNamesVision;
   std::vector<const char*> ptrInputNamesDecoder, ptrOutputNamesDecoder;
-
   bool loadingModel = false;
   bool preprocessing = false;
   bool terminating = false;
@@ -48,6 +45,7 @@ class Sam3Tracker {
   void loadingStart();
   void loadingEnd();
   cv::Size getInputSize();
+  cv::Size getMaskSize();
   bool preprocessImage(const cv::Mat& image);
   void preprocessingStart();
   void preprocessingEnd();
