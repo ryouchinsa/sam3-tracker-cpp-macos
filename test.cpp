@@ -3,7 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include "sam3_tracker.h"
 
-DEFINE_string(vision_encoder, "sam3/vision-encoder.onnx", "Path to the viion encoder model");
+DEFINE_string(vision_encoder, "sam3/vision-encoder.onnx", "Path to the vision encoder model");
 DEFINE_string(decoder, "sam3/decoder.onnx", "Path to the decoder model");
 DEFINE_string(points, "", "Point prompt");
 DEFINE_string(points_second, "", "Point prompt after the first point prompt");
